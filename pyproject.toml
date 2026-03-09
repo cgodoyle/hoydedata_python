@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hoydedata-python"
+version = "0.1.0"
+description = "Python client for Høydedata.no api"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "geopandas>=1.1.2",
+    "httpx>=0.28.1",
+    "loguru>=0.7.3",
+    "numpy>=2.4.2",
+    "pandas>=3.0.1",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.13.1",
+    "rasterio>=1.5.0",
+    "tenacity>=9.1.4",
+    "tqdm>=4.67.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ty.rules]
+unused-ignore-comment = "warn"
+redundant-cast = "ignore"
+invalid-argument-type = "warn"
+unresolved-import = "warn"
+unresolved-attribute = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "error"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "mkdocstrings-python>=2.0.3",
+    "ruff>=0.15.5",
+    "ty>=0.0.21",
+    "zensical>=0.0.24",
+]
