@@ -17,9 +17,25 @@ Requirements:
 - Python `3.12+`
 - `uv` (recommended for this repository workflow)
 
+Install directly from GitHub:
+
+```bash
+pip install "git+https://github.com/cgodoyle/hoydedata_python.git"
+```
+
+Or with `uv pip`:
+
+```bash
+uv pip install "git+https://github.com/cgodoyle/hoydedata_python.git"
+```
+
 For local development:
 
 ```bash
+git clone https://github.com/cgodoyle/hoydedata_python.git
+
+cd hoydedata_python
+
 uv sync --dev
 ```
 
