@@ -9,6 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Local environment config
+.env
+.env.*
+!.env.example
+AGENTS.md
+
 *.tif
 .notebooks
 .github

@@ -11,6 +11,12 @@ URL_STATUS = settings.URL_STATUS
 
 
 def check_api_status():
+    """Check whether the metadata endpoint is responding without API error.
+
+    Returns:
+        `True` when the service responds without an `Error` field, otherwise
+        `False`.
+    """
 
     params = {"request": json.dumps({"Filter": "Aarstall=2015"})}
 
@@ -22,32 +28,22 @@ def check_api_status():
 
 
 def get_metadata(polygon, laser_type=1, crs=25833, stoponcover=False, min_res=0.5):
-    """
-    Get the metadata for the Høydedata projects inside a polygon
-    check https://hoydedata.no/LaserInnsyn2/dok/webtjenester.pdf for more info
+    """Get Høydedata project metadata intersecting a polygon.
 
-    Parameters
-    ----------
-    polygon : geopandas.GeoDataFrame
-        Polygon to get the metadata from
-    laser_type : int, optional
-        Type of laser data (1=Laser, 2=Bildematching, 3=Mobil Laser, 4=Grønn laser), by default 1
-    crs : int, optional
-        Coordinate reference system, by default 25833
-    stoponcover : bool, optional
-        Select only projects that cover the whole polygon, by default False
-    min_res : float, optional
-        Minimum resolution of the projects, by default 0.5
+    Args:
+        polygon: Polygon area of interest as a GeoDataFrame.
+        laser_type: Project type filter (`1` laser, `2` image matching,
+            `3` mobile laser, `4` green laser).
+        crs: EPSG code used for input/output coordinates.
+        stoponcover: Request full polygon coverage only when `True`.
+        min_res: Maximum accepted project resolution (meters).
 
-    Returns
-    -------
-    geopandas.GeoDataFrame
-        GeoDataFrame with the metadata and geometries of the projects
-    list
-        List with the names of the two most recent projects
-        TODO: return the two most recent projects from different years
-        TODO: slå sammen prosjekter som er fra samme årstall og sjekk om de dekker polygonen
+    Returns:
+        Tuple `(gdf_clipped, name_recent)` where:
+        - `gdf_clipped` is a filtered/clipped GeoDataFrame of project metadata.
+        - `name_recent` is project-name array sorted by descending year.
 
+        Returns `(None, None)` when no matching projects are found.
     """
 
     coords = polygon.geometry.get_coordinates().values.tolist()
@@ -103,30 +99,21 @@ def send_export_job(
     email="nn@nn.no",  # this must be filled with a default email ?
     name="test api",
 ):
-    """
-    Send a job to export the data from the projects inside a polygon
-    check https://hoydedata.no/LaserInnsyn2/dok/webtjenester.pdf for more info
+    """Submit an export job for selected projects and polygon geometry.
 
-    Parameters
-    ----------
-    projects_name : str or list
-        Name of the projects to export
-    polygon : geopandas.GeoDataFrame
-        Polygon to query the data and clip the results to
-    kartblad : int, optional
-        Size of the map sheet (0, 1000, 2000, 5000, 10000), by default 2000 (kartblad 1:2000)
-    crs : int, optional
-        Coordinate reference system, by default 25833
-    email : str, optional
-        Email to send the notification
-    name : str, optional
-        Name of the job, by default "test api"
+    Args:
+        projects_name: Project name or list of project names to export.
+        polygon: Polygon used for query and clipping.
+        username: Høydedata username.
+        password: Høydedata password.
+        kartblad: Mapsheet size (`0`, `1000`, `2000`, `5000`, `10000`).
+        crs: EPSG code used for coordinate input/output.
+        email: Notification email used by the service.
+        name: Job label shown in service/job tracking.
 
-    Returns
-    -------
-    dict
-        Dictionary with the response from the server. Use JobID to check the status of the job
-
+    Returns:
+        Response dictionary from export service. Use `JobID` with
+        `get_export_job_status`.
     """
     assert type(projects_name) in [list, str], "projects_name must be a string or a list of strings"
     assert kartblad in [0, 1000, 2000, 5000, 10000], "kartblad must be 0, 1000, 2000, 5000 or 10000"
@@ -169,19 +156,13 @@ def send_export_job(
 
 
 def get_export_job_status(job_id):
-    """
-    Get the status of a job
+    """Get status for a previously submitted export job.
 
-    Parameters
-    ----------
-    job_id : int
-        ID of the job to check
+    Args:
+        job_id: Export job identifier.
 
-    Returns
-    -------
-    dict
-        Dictionary with the response from the server. Use Status to check the status of the job and Url to download the data
-
+    Returns:
+        Response dictionary. Inspect `Status`; use `Url` when ready.
     """
     params = {
         "JobID": job_id,

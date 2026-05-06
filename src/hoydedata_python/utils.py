@@ -1,20 +1,17 @@
 import re
-from typing import Union
 
 import geopandas as gpd
 from shapely.geometry import box
 
 
 def clean_url(url: str) -> str:
-    """
-    Cleans a URL by removing duplicate slashes, except for the protocol part (e.g., "http://").
+    """Remove duplicate slashes from a URL while preserving protocol.
 
     Args:
-        url (str): The URL to clean.
+        url: URL to normalize.
 
     Returns:
-        str: The cleaned URL with duplicate slashes removed.
-
+        URL string with duplicate path slashes removed.
     """
     cleaned_url = re.sub(r"(?<!:)/{2,}", "/", url)
     return cleaned_url
@@ -29,19 +26,19 @@ def transform_bounds(
     Transforms bounds from one CRS to another.
 
     Args:
-        bounds (list[float]): A list of bounds in the format [minx, miny, maxx, maxy].
-        crs_in (int, optional): The EPSG code of the input CRS. Defaults to 25833.
-        crs_out (int, optional): The EPSG code of the output CRS. Defaults to 4326.
+        bounds: Bounds as `[minx, miny, maxx, maxy]`.
+        crs_in: EPSG code of input CRS.
+        crs_out: EPSG code of output CRS.
 
     Returns:
-        list[float]: A list of transformed bounds in the format [minx, miny, maxx, maxy].
+        Transformed bounds `[minx, miny, maxx, maxy]`.
     """
     bbox = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=crs_in).to_crs(crs_out).total_bounds
     return bbox
 
 
 def split_bbox(
-    bbox: Union[gpd.GeoDataFrame, list[float], tuple[float, ...]],
+    bbox: gpd.GeoDataFrame | list[float] | tuple[float, ...],
     n_rows: int,
     n_cols: int,
     crs=25833,
@@ -50,13 +47,13 @@ def split_bbox(
     Split a bounding box into a grid of smaller boxes.
 
     Args:
-        bbox (Union[gpd.GeoDataFrame, list[float], tuple[float,...]]): The bounding box to split.
-        n_rows (int): Number of rows in the grid.
-        n_cols (int): Number of columns in the grid.
-        crs (int, optional): Coordinate reference system. Defaults to 25833.
+        bbox: Bounding box as GeoDataFrame or bounds tuple/list.
+        n_rows: Number of grid rows.
+        n_cols: Number of grid columns.
+        crs: Coordinate reference system (EPSG).
 
     Returns:
-        gpd.GeoDataFrame: A GeoDataFrame containing the smaller boxes.
+        GeoDataFrame containing all generated sub-boxes and `id`.
     """
     if isinstance(bbox, (list, tuple)):
         minx, miny, maxx, maxy = bbox
@@ -88,10 +85,10 @@ def bounds_area(bounds: list[float] | tuple[float, ...]) -> float:
     Calculate the area of a bounding box in square kilometers.
 
     Args:
-        bounds (list or tuple): A list or tuple containing the bounding box coordinates in the format [minx, miny, maxx, maxy].
+        bounds: Bounding box coordinates `[minx, miny, maxx, maxy]`.
 
     Returns:
-        float: The area of the bounding box in square kilometers.
+        Area in square kilometers.
     """
     xmin, ymin, xmax, ymax = bounds
     return ((xmax - xmin) / 1000) * ((ymax - ymin) / 1000)

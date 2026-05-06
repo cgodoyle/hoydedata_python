@@ -46,7 +46,14 @@ dev = [
     "jupyter>=1.1.1",
     "matplotlib>=3.10.8",
     "mkdocstrings-python>=2.0.3",
+    "pytest>=8.4.2",
     "ruff>=0.15.5",
     "ty>=0.0.21",
     "zensical>=0.0.24",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "smoke: lightweight high-value regression checks",
+    "integration: real network/integration checks",
 ]

@@ -32,7 +32,16 @@ def api_retry(
     wait_min=settings.API_RETRY_MIN_WAIT,
     wait_max=settings.API_RETRY_MAX_WAIT,
 ):
-    """Simple retry decorator for API calls"""
+    """Create a retry decorator for transient API/network errors.
+
+    Args:
+        max_attempts: Maximum number of attempts before failing.
+        wait_min: Minimum exponential backoff wait in seconds.
+        wait_max: Maximum exponential backoff wait in seconds.
+
+    Returns:
+        A configured tenacity retry decorator.
+    """
     return retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=wait_min, max=wait_max),
@@ -53,6 +62,11 @@ def api_retry(
 
 
 def _get_query_url():
+    """Build the ArcGIS exportImage endpoint URL.
+
+    Returns:
+        Full export image URL for the configured API service/layer.
+    """
     return f"{settings.API_URL}/{settings.API_LAYER}/ImageServer/exportImage"
 
 
@@ -61,11 +75,10 @@ def check_elevation_service_status(timeout_seconds: int = 20) -> bool:
     Check the availability of an ArcGIS elevation service.
 
     Args:
-        service: The elevation data service instance
-        timeout_seconds: Timeout for the request in seconds
+        timeout_seconds: Timeout for the request in seconds.
 
     Returns:
-        bool: True if service is available, False otherwise
+        `True` if the service responds successfully, otherwise `False`.
     """
     try:
         service_url = _get_query_url().replace("exportImage", "info")
@@ -87,19 +100,20 @@ async def _make_http_request(
     params: dict,
     timeout_seconds: int,
 ) -> httpx.Response:
-    """
-    Helper function that handles HTTP requests with retry logic.
+    """Execute an HTTP GET request with retry logic.
 
     Args:
-        url: The URL to request
-        params: URL parameters
-        timeout_seconds: Request timeout in seconds
+        url: URL to request.
+        params: Query string parameters.
+        timeout_seconds: Request timeout in seconds.
 
     Returns:
-        The HTTP response object
+        HTTP response object.
 
     Raises:
-        Various HTTP and connection errors
+        httpx.HTTPError: On non-success status responses.
+        ConnectionError: On transient network errors.
+        TimeoutError: On timeout errors.
     """
     async with httpx.AsyncClient() as client:
         response = await client.get(url, params=params, timeout=timeout_seconds)
@@ -112,15 +126,14 @@ async def fetch_elevation_data(
     bounds: tuple,
     resolution_meters: float = 5,
 ) -> bytes:
-    """
-    Fetch digital elevation model data from the høydedata API.
+    """Fetch DEM TIFF bytes from the elevation API.
 
     Args:
-        bounds: Bounding box coordinates (xmin, ymin, xmax, ymax)
-        resolution_meters: Resolution of the raster in meters
+        bounds: Bounding box coordinates `(xmin, ymin, xmax, ymax)`.
+        resolution_meters: Raster resolution in meters.
 
     Returns:
-        Raw TIFF data as bytes
+        Raw TIFF payload as bytes.
     """
     xmin, ymin, xmax, ymax = bounds
 
@@ -151,16 +164,13 @@ async def fetch_elevation_data(
 
 
 def convert_tiff_bytes_to_raster(tiff_bytes: bytes) -> tuple[np.ndarray, dict]:
-    """
-    Convert TIFF bytes to a raster array and profile.
+    """Convert TIFF bytes to an elevation array and raster profile.
 
     Args:
-        tiff_bytes: Raw TIFF data as bytes
+        tiff_bytes: Raw TIFF bytes.
 
     Returns:
-        Tuple containing:
-        - elevation_array: numpy array with elevation values
-        - raster_profile: rasterio profile dictionary
+        Tuple with `(elevation_array, raster_profile)`.
     """
     try:
         with MemoryFile(tiff_bytes) as memfile:
@@ -179,13 +189,12 @@ async def fetch_and_save_elevation_tile(
     bounds: tuple,
     resolution_meters: float = 5,
 ) -> None:
-    """
-    Fetch elevation data and save it as a TIFF file.
+    """Fetch elevation data for bounds and persist as a TIFF tile.
 
     Args:
-        output_filename: Path where the TIFF file will be saved (string or Path)
-        bounds: Bounding box coordinates (xmin, ymin, xmax, ymax)
-        resolution_meters: Resolution in meters
+        output_filename: Destination TIFF path.
+        bounds: Bounding box coordinates `(xmin, ymin, xmax, ymax)`.
+        resolution_meters: Raster resolution in meters.
     """
     # Validate and convert path
     output_path = validate_and_convert_path(output_filename)
@@ -204,15 +213,14 @@ def _check_request_size_limits(
     bounds: tuple,
     resolution_meters: float,
 ) -> bool:
-    """
-    Check if the request size is within service limits.
+    """Check whether a DEM request fits service pixel limits.
 
     Args:
-        bounds: Bounding box coordinates (xmin, ymin, xmax, ymax)
-        resolution_meters: Resolution in meters
+        bounds: Bounding box coordinates `(xmin, ymin, xmax, ymax)`.
+        resolution_meters: Raster resolution in meters.
 
     Returns:
-        True if within limits, False if too large
+        `True` when width and height are within configured limits.
     """
     xmin, ymin, xmax, ymax = bounds
     width_pixels = (xmax - xmin) / resolution_meters
@@ -227,16 +235,22 @@ async def download_elevation_model(
     resolution_meters: float,
     output_path: Union[str, pathlib.Path],
 ) -> None:
-    """
-    Download a digital elevation model (DEM) raster file from the Norwegian Mapping Authority (Kartverket) API.
+    """Download a DEM for a bounding box and save it as GeoTIFF.
 
     Args:
-        bounds: The bounding box coordinates (xmin, ymin, xmax, ymax) of the area of interest
-        resolution_meters: The resolution of the DEM in meters
-        output_path: The output file path for the downloaded DEM (string or Path)
+        bounds: Bounding box coordinates `(xmin, ymin, xmax, ymax)`.
+        resolution_meters: DEM resolution in meters.
+        output_path: Output file or directory path.
 
     Returns:
-        None: The downloaded DEM is saved to the specified file
+        None. The DEM is written to disk.
+
+    Notes:
+        - If `output_path` ends with `.tif`, it is treated as a file path.
+        - Otherwise, it is treated as a directory and the file name is
+          `dem_ndh_{resolution_meters}m.tif`.
+        - Requests larger than service limits are tiled, merged, and temporary
+          tiles are removed after merge.
     """
     xmin, ymin, xmax, ymax = bounds
 
@@ -320,6 +334,16 @@ async def download_elevation_model(
 
 
 def extract_elevation_values_for_points(point_array: np.ndarray, elevation_array, raster_profile) -> np.ndarray:
+    """Extract elevation values for points from an in-memory raster.
+
+    Args:
+        point_array: One point `[x, y]` or array of points shaped `(n, 2)`.
+        elevation_array: 2D raster array with elevation values.
+        raster_profile: Raster profile containing an affine transform.
+
+    Returns:
+        Elevation values for points that fall inside the raster bounds.
+    """
 
     if point_array.shape == (2,):
         points_xy = np.expand_dims(point_array, 0)
@@ -344,15 +368,14 @@ def extract_elevation_values_for_points(point_array: np.ndarray, elevation_array
 async def download_and_extract_elevation_values_for_points(
     point_array: np.ndarray, resolution_meters: int = 5
 ) -> np.ndarray:
-    """
-    Extract elevation values for given x,y coordinates.
+    """Download local DEM data and extract elevations for given points.
 
     Args:
-        point_array: numpy array with x,y coordinates
-        resolution_meters: Resolution for elevation data in meters
+        point_array: One point `[x, y]` or array of points shaped `(n, 2)`.
+        resolution_meters: Resolution for downloaded elevation data in meters.
 
     Returns:
-        numpy array with elevation values (z coordinates)
+        Elevation values (z) aligned with input points.
     """
     if point_array.shape == (2,):
         points_xy = np.expand_dims(point_array, 0)

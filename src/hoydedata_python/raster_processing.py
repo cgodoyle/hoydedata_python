@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Union
 
 import geopandas as gpd
 import numpy as np
@@ -15,14 +14,12 @@ def save_raster(
     profile: Profile,
     filename: str,
 ) -> None:
-    """
-    Save a numpy array as a raster
+    """Save a 2D array as a single-band raster.
+
     Args:
-        arr: numpy array
-        profile: rasterio profile
-        filename: path to save the raster
-    Returns:
-        None
+        arr: Raster values to write.
+        profile: Rasterio profile used to create output dataset.
+        filename: Destination raster path.
     """
     with rasterio.open(filename, "w", **profile) as dst:
         dst.write(arr, 1)
@@ -32,14 +29,11 @@ def merge_rasters(
     raster_list: list,
     save_path: str | Path,
 ) -> None:
-    """
-    Merge a list of rasters into a single raster
-    Args:
-        raster_list: list of paths to the rasters to merge
-        save_path: path to save the merged raster
+    """Merge multiple rasters into one output raster.
 
-    Returns:
-        None
+    Args:
+        raster_list: Paths to rasters to merge.
+        save_path: Destination path for merged raster.
     """
 
     mosaic, transform = merge(raster_list)
@@ -60,7 +54,7 @@ def merge_rasters(
 
 def clip_raster_to_extents(
     raster_path: str,
-    extents: Union[list, tuple, np.ndarray, gpd.GeoDataFrame],
+    extents: list | tuple | np.ndarray | gpd.GeoDataFrame,
     output_path: str | Path,
     crs: int = 25833,
 ) -> None:
@@ -68,9 +62,11 @@ def clip_raster_to_extents(
     Clip a raster to the given extents and save the result.
 
     Args:
-        raster_path (str): Path to the input raster file.
-        extents (Union[list, tuple, np.ndarray, gpd.GeoDataFrame]): The geographical extents to clip to.
-        output_path (str | Path): Path to save the clipped raster.
+        raster_path: Path to input raster.
+        extents: Clip extents as bounds (`minx, miny, maxx, maxy`) or
+            GeoDataFrame geometry.
+        output_path: Destination for clipped raster.
+        crs: CRS used when `extents` is bounds-like input.
     """
     if isinstance(extents, (list, tuple, np.ndarray)):
         extents = gpd.GeoDataFrame(geometry=[box(*extents)], crs=crs)
