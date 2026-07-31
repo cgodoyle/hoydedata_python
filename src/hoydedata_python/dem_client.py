@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import pathlib
-from typing import Union
 
 import httpx
 import numpy as np
@@ -11,6 +10,7 @@ from rasterio import MemoryFile
 from tenacity import (
     before_sleep_log,
     retry,
+    retry_if_exception,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -56,9 +56,16 @@ def api_retry(
                 httpx.ConnectError,
                 httpx.RemoteProtocolError,
             )
-        ),
+        )
+        | retry_if_exception(_is_retryable_http_status),
+        reraise=True,
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
+
+
+def _is_retryable_http_status(exception: BaseException) -> bool:
+    """Return whether an HTTP status error is safe to retry."""
+    return isinstance(exception, httpx.HTTPStatusError) and exception.response.status_code in {429, 502, 503, 504}
 
 
 def _get_query_url():
@@ -94,13 +101,12 @@ def check_elevation_service_status(timeout_seconds: int = 20) -> bool:
     return is_available
 
 
-@api_retry()
 async def _make_http_request(
     url: str,
     params: dict,
-    timeout_seconds: int,
+    timeout_seconds: int | float,
 ) -> httpx.Response:
-    """Execute an HTTP GET request with retry logic.
+    """Execute a single HTTP GET request.
 
     Args:
         url: URL to request.
@@ -112,8 +118,6 @@ async def _make_http_request(
 
     Raises:
         httpx.HTTPError: On non-success status responses.
-        ConnectionError: On transient network errors.
-        TimeoutError: On timeout errors.
     """
     async with httpx.AsyncClient() as client:
         response = await client.get(url, params=params, timeout=timeout_seconds)
@@ -122,15 +126,45 @@ async def _make_http_request(
     return response
 
 
+async def _request_with_retry(
+    url: str,
+    params: dict,
+    timeout_seconds: int | float | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: int | float | None = None,
+    retry_max_wait: int | float | None = None,
+) -> httpx.Response:
+    """Execute an HTTP GET request with per-call retry settings."""
+    effective_timeout = settings.API_TIMEOUT if timeout_seconds is None else timeout_seconds
+    effective_retry_attempts = settings.API_RETRY_ATTEMPTS if retry_attempts is None else retry_attempts
+    effective_retry_min_wait = settings.API_RETRY_MIN_WAIT if retry_min_wait is None else retry_min_wait
+    effective_retry_max_wait = settings.API_RETRY_MAX_WAIT if retry_max_wait is None else retry_max_wait
+
+    request = api_retry(
+        max_attempts=effective_retry_attempts,
+        wait_min=effective_retry_min_wait,
+        wait_max=effective_retry_max_wait,
+    )(_make_http_request)
+    return await request(url, params, timeout_seconds=effective_timeout)
+
+
 async def fetch_elevation_data(
     bounds: tuple,
     resolution_meters: float = 5,
+    timeout_seconds: int | float | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: int | float | None = None,
+    retry_max_wait: int | float | None = None,
 ) -> bytes:
     """Fetch DEM TIFF bytes from the elevation API.
 
     Args:
         bounds: Bounding box coordinates `(xmin, ymin, xmax, ymax)`.
         resolution_meters: Raster resolution in meters.
+        timeout_seconds: Per-call request timeout. Defaults to configured API timeout.
+        retry_attempts: Total request attempts, including the first one. Defaults to configured retry attempts.
+        retry_min_wait: Per-call minimum exponential backoff wait in seconds.
+        retry_max_wait: Per-call maximum exponential backoff wait in seconds.
 
     Returns:
         Raw TIFF payload as bytes.
@@ -158,7 +192,14 @@ async def fetch_elevation_data(
         "renderingRule": "",
         "f": "image",
     }
-    response = await _make_http_request(_get_query_url(), params, timeout_seconds=settings.API_TIMEOUT)
+    response = await _request_with_retry(
+        _get_query_url(),
+        params,
+        timeout_seconds=timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    )
 
     return response.content
 
@@ -185,7 +226,7 @@ def convert_tiff_bytes_to_raster(tiff_bytes: bytes) -> tuple[np.ndarray, dict]:
 
 
 async def fetch_and_save_elevation_tile(
-    output_filename: Union[str, pathlib.Path],
+    output_filename: str | pathlib.Path,
     bounds: tuple,
     resolution_meters: float = 5,
 ) -> None:
@@ -233,7 +274,7 @@ def _check_request_size_limits(
 async def download_elevation_model(
     bounds: tuple,
     resolution_meters: float,
-    output_path: Union[str, pathlib.Path],
+    output_path: str | pathlib.Path,
 ) -> None:
     """Download a DEM for a bounding box and save it as GeoTIFF.
 
@@ -366,13 +407,22 @@ def extract_elevation_values_for_points(point_array: np.ndarray, elevation_array
 
 
 async def download_and_extract_elevation_values_for_points(
-    point_array: np.ndarray, resolution_meters: int = 5
+    point_array: np.ndarray,
+    resolution_meters: int = 5,
+    timeout_seconds: int | float | None = None,
+    retry_attempts: int | None = None,
+    retry_min_wait: int | float | None = None,
+    retry_max_wait: int | float | None = None,
 ) -> np.ndarray:
     """Download local DEM data and extract elevations for given points.
 
     Args:
         point_array: One point `[x, y]` or array of points shaped `(n, 2)`.
         resolution_meters: Resolution for downloaded elevation data in meters.
+        timeout_seconds: Per-call request timeout. Defaults to configured API timeout.
+        retry_attempts: Total request attempts, including the first one. Defaults to configured retry attempts.
+        retry_min_wait: Per-call minimum exponential backoff wait in seconds.
+        retry_max_wait: Per-call maximum exponential backoff wait in seconds.
 
     Returns:
         Elevation values (z) aligned with input points.
@@ -385,7 +435,14 @@ async def download_and_extract_elevation_values_for_points(
     xmin, ymin = points_xy.min(axis=0) - 10  # small buffer
     xmax, ymax = points_xy.max(axis=0) + 10  # small buffer
 
-    tiff_bytes = await fetch_elevation_data((xmin, ymin, xmax, ymax), resolution_meters=resolution_meters)
+    tiff_bytes = await fetch_elevation_data(
+        (xmin, ymin, xmax, ymax),
+        resolution_meters=resolution_meters,
+        timeout_seconds=timeout_seconds,
+        retry_attempts=retry_attempts,
+        retry_min_wait=retry_min_wait,
+        retry_max_wait=retry_max_wait,
+    )
     elevation_array, raster_profile = convert_tiff_bytes_to_raster(tiff_bytes)
     transform = raster_profile["transform"]
 

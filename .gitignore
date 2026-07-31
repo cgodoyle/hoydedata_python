@@ -18,3 +18,5 @@ AGENTS.md
 *.tif
 .notebooks
 .github
+
+test*.ipynb

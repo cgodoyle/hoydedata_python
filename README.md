@@ -139,13 +139,41 @@ if job_id is not None:
 Main exports from `hoydedata_python`:
 
 - `download_elevation_model(bounds, resolution_meters, output_path)`
-- `download_and_extract_elevation_values_for_points(point_array, resolution_meters=5)`
+- `download_and_extract_elevation_values_for_points(point_array, resolution_meters=5, timeout_seconds=None, retry_attempts=None, retry_min_wait=None, retry_max_wait=None)`
 
 Additional modules:
 
-- `hoydedata_python.dem_client`: DEM fetch/download/extract flow.
+- `hoydedata_python.dem_client`: DEM fetch/download/extract flow, including `fetch_elevation_data(...)`.
 - `hoydedata_python.export_client`: metadata/export job flow.
 - `hoydedata_python.raster_processing`: raster merge and clipping utilities.
+
+## Timeouts and retries
+
+DEM fetch calls use the configured package defaults unless a caller passes per-call overrides.
+
+Defaults preserve batch/download behavior:
+
+- `timeout_seconds=settings.API_TIMEOUT` (`500` seconds by default)
+- `retry_attempts=settings.API_RETRY_ATTEMPTS` (`3` total attempts by default)
+- `retry_min_wait=settings.API_RETRY_MIN_WAIT` (`1` second by default)
+- `retry_max_wait=settings.API_RETRY_MAX_WAIT` (`10` seconds by default)
+
+Interactive apps can fail fast without changing global settings:
+
+```python
+from hoydedata_python.dem_client import fetch_elevation_data
+
+tiff_bytes = await fetch_elevation_data(
+    bounds,
+    resolution_meters=5,
+    timeout_seconds=8,
+    retry_attempts=1,
+)
+```
+
+The same controls are available on `download_and_extract_elevation_values_for_points(...)`.
+
+Retry behavior is applied per call in the DEM HTTP request layer, not by an import-time decorator on the request function. Network timeout/connection/protocol errors are retried, as are HTTP `429`, `502`, `503`, and `504`. HTTP `400`, `401`, `403`, and `404` are not retried.
 
 ## Configuration
 
